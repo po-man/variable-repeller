@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Variable Frequency Rodent Repeller</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 80vh;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            background-color: #2d2d2d;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            max-width: 400px;
+            width: 100%;
+        }
+        h1 { margin-top: 0; font-size: 1.5rem; text-align: center; color: #ff5252; }
+        .status { 
+            text-align: center; 
+            margin-bottom: 20px; 
+            font-weight: bold; 
+            height: 1.2em;
+            color: #4caf50;
+        }
+        .control-group { margin-bottom: 20px; }
+        label { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; }
+        input[type="range"] { width: 100%; cursor: pointer; accent-color: #ff5252; }
+        .btn-group { display: flex; gap: 10px; margin-top: 20px; }
+        button {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn-start { background-color: #4caf50; color: white; }
+        .btn-start:hover { background-color: #45a049; }
+        .btn-stop { background-color: #ff5252; color: white; }
+        .btn-stop:hover { background-color: #e53935; }
+        .value-display { color: #aaa; font-family: monospace; }
+        .warning {
+            margin-top: 20px;
+            font-size: 0.8rem;
+            color: #aaa;
+            background: #252525;
+            padding: 10px;
+            border-radius: 6px;
+            border-left: 3px solid #ff9800;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Variable Repeller</h1>
+    <div class="status" id="statusText">Ready</div>
+
+    <div class="control-group">
+        <label>
+            Min Frequency (Hz)
+            <span class="value-display" id="minFreqVal">18000</span>
+        </label>
+        <input type="range" id="minFreq" min="10000" max="22000" value="18000">
+    </div>
+
+    <div class="control-group">
+        <label>
+            Max Frequency (Hz)
+            <span class="value-display" id="maxFreqVal">22000</span>
+        </label>
+        <input type="range" id="maxFreq" min="10000" max="22000" value="22000">
+    </div>
+
+    <div class="control-group">
+        <label>
+            Intensity (Volume)
+            <span class="value-display" id="volVal">80%</span>
+        </label>
+        <input type="range" id="volume" min="0" max="1" step="0.01" value="0.8">
+    </div>
+
+    <div class="control-group">
+        <label>
+            Activity (Wait Time)
+            <span class="value-display" id="rateVal">Medium</span>
+        </label>
+        <input type="range" id="pulseRate" min="1" max="10" value="5">
+        <div style="font-size: 0.75rem; color: #888; margin-top: 5px;">
+            Controls the silence gap between the long pulses.
+        </div>
+    </div>
+
+    <div class="btn-group">
+        <button class="btn-start" id="startBtn">PLAY</button>
+        <button class="btn-stop" id="stopBtn">STOP</button>
+    </div>
+
+    <div class="warning">
+        <strong>⚠️ Note:</strong> Pulses now last 0.5s–3.0s. If you cannot hear it (normal above 16kHz), watch the status text to confirm it is running.
+    </div>
+</div>
+
+<script>
+    let audioCtx;
+    let mainGain;
+    let isPlaying = false;
+    let timeoutId;
+
+    // DOM Elements
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const statusText = document.getElementById('statusText');
+    const minFreqInput = document.getElementById('minFreq');
+    const maxFreqInput = document.getElementById('maxFreq');
+    const volInput = document.getElementById('volume');
+    const rateInput = document.getElementById('pulseRate');
+
+    // UI Updates
+    const updateDisplay = () => {
+        document.getElementById('minFreqVal').textContent = minFreqInput.value;
+        document.getElementById('maxFreqVal').textContent = maxFreqInput.value;
+        document.getElementById('volVal').textContent = Math.round(volInput.value * 100) + '%';
+        
+        let rateText = "Medium";
+        if(rateInput.value < 4) rateText = "Low";
+        if(rateInput.value > 7) rateText = "High";
+        document.getElementById('rateVal').textContent = rateText;
+    };
+
+    [minFreqInput, maxFreqInput, volInput, rateInput].forEach(el => {
+        el.addEventListener('input', updateDisplay);
+    });
+
+    // Helper: Random number in range
+    const randomRange = (min, max) => Math.random() * (max - min) + min;
+
+    // Core Audio Logic
+    function playBurst() {
+        if (!isPlaying) return;
+
+        // 1. Create Oscillator for this burst
+        const osc = audioCtx.createOscillator();
+        const burstGain = audioCtx.createGain();
+        
+        osc.connect(burstGain);
+        burstGain.connect(mainGain);
+
+        // 2. Determine Parameters
+        const minF = parseInt(minFreqInput.value);
+        const maxF = parseInt(maxFreqInput.value);
+        const activityLevel = parseInt(rateInput.value);
+        
+        // Random Frequency Sweep
+        const startFreq = randomRange(minF, maxF);
+        const endFreq = randomRange(minF, maxF);
+        
+        // --- UPDATED DURATION LOGIC ---
+        // Random Duration between 0.5s and 3.0s
+        const duration = randomRange(0.5, 3.0); 
+        
+        // 3. Schedule Sound
+        const now = audioCtx.currentTime;
+        
+        // Frequency Sweep (Siren effect)
+        osc.frequency.setValueAtTime(startFreq, now);
+        osc.frequency.linearRampToValueAtTime(endFreq, now + duration);
+
+        // Volume Envelope (Attack -> Sustain -> Release)
+        burstGain.gain.setValueAtTime(0, now);
+        burstGain.gain.linearRampToValueAtTime(1, now + 0.1); // Slow attack (100ms) prevents clicking
+        burstGain.gain.setValueAtTime(1, now + (duration - 0.1)); // Sustain
+        burstGain.gain.linearRampToValueAtTime(0, now + duration); // Release
+
+        // Start and Stop
+        osc.start(now);
+        osc.stop(now + duration + 0.1);
+
+        // 4. Schedule Next Burst
+        // Invert rate: High rate (10) = short gap. Low rate (1) = long gap.
+        const baseDelay = (11 - activityLevel) * 200; 
+        const randomDelay = Math.random() * 1500; // Increased randomness for gaps
+        const totalDelay = baseDelay + randomDelay;
+
+        // Visual Feedback (Duration rounded to 1 decimal)
+        statusText.textContent = `Active (${duration.toFixed(1)}s): ${Math.round(startFreq)}Hz ➔ ${Math.round(endFreq)}Hz`;
+        
+        // Wait for the sound to finish (duration * 1000) + the gap time
+        timeoutId = setTimeout(playBurst, (duration * 1000) + totalDelay);
+    }
+
+    startBtn.addEventListener('click', () => {
+        if (isPlaying) return;
+        
+        // Initialize Audio Context (must be user triggered)
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        // Master Gain (Volume Control)
+        mainGain = audioCtx.createGain();
+        mainGain.connect(audioCtx.destination);
+        mainGain.gain.value = volInput.value;
+
+        // Watch volume slider to update in real-time
+        volInput.addEventListener('input', () => {
+            if(mainGain) mainGain.gain.value = volInput.value;
+        });
+
+        isPlaying = true;
+        statusText.textContent = "Running...";
+        statusText.style.color = "#4caf50";
+        playBurst();
+    });
+
+    stopBtn.addEventListener('click', () => {
+        isPlaying = false;
+        clearTimeout(timeoutId);
+        statusText.textContent = "Stopped";
+        statusText.style.color = "#ff5252";
+        
+        // Disconnect to ensure silence
+        if (mainGain) {
+            mainGain.disconnect();
+        }
+    });
+
+</script>
+</body>
+</html>
