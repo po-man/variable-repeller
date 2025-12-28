@@ -34,8 +34,9 @@
             color: #4caf50;
         }
         .control-group { margin-bottom: 20px; }
-        label { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; }
+        label { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; align-items: center; }
         input[type="range"] { width: 100%; cursor: pointer; accent-color: #ff5252; }
+        
         .btn-group { display: flex; gap: 10px; margin-top: 20px; }
         button {
             flex: 1;
@@ -87,10 +88,18 @@
 
     <div class="control-group">
         <label>
-            Intensity (Volume)
-            <span class="value-display" id="volVal">80%</span>
+            Min Intensity (Lower Limit)
+            <span class="value-display" id="minVolVal">20%</span>
         </label>
-        <input type="range" id="volume" min="0" max="1" step="0.01" value="0.8">
+        <input type="range" id="minVol" min="0" max="1" step="0.01" value="0.2">
+    </div>
+
+    <div class="control-group">
+        <label>
+            Max Intensity (Upper Limit)
+            <span class="value-display" id="maxVolVal">100%</span>
+        </label>
+        <input type="range" id="maxVol" min="0" max="1" step="0.01" value="1.0">
     </div>
 
     <div class="control-group">
@@ -100,7 +109,7 @@
         </label>
         <input type="range" id="pulseRate" min="1" max="10" value="5">
         <div style="font-size: 0.75rem; color: #888; margin-top: 5px;">
-            Controls the silence gap between the long pulses.
+            Controls silence between pulses.
         </div>
     </div>
 
@@ -110,7 +119,7 @@
     </div>
 
     <div class="warning">
-        <strong>⚠️ Note:</strong> Pulses now last 0.5s–3.0s. If you cannot hear it (normal above 16kHz), watch the status text to confirm it is running.
+        <strong>⚠️ Effect:</strong> Every pulse swells from a random Low volume to a random High volume (Looming).
     </div>
 </div>
 
@@ -124,24 +133,38 @@
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const statusText = document.getElementById('statusText');
+    
     const minFreqInput = document.getElementById('minFreq');
     const maxFreqInput = document.getElementById('maxFreq');
-    const volInput = document.getElementById('volume');
+    
+    // New Volume Inputs
+    const minVolInput = document.getElementById('minVol');
+    const maxVolInput = document.getElementById('maxVol');
+    
     const rateInput = document.getElementById('pulseRate');
 
     // UI Updates
     const updateDisplay = () => {
         document.getElementById('minFreqVal').textContent = minFreqInput.value;
         document.getElementById('maxFreqVal').textContent = maxFreqInput.value;
-        document.getElementById('volVal').textContent = Math.round(volInput.value * 100) + '%';
+        
+        document.getElementById('minVolVal').textContent = Math.round(minVolInput.value * 100) + '%';
+        document.getElementById('maxVolVal').textContent = Math.round(maxVolInput.value * 100) + '%';
         
         let rateText = "Medium";
         if(rateInput.value < 4) rateText = "Low";
         if(rateInput.value > 7) rateText = "High";
         document.getElementById('rateVal').textContent = rateText;
+
+        // Visual check: Ensure min doesn't cross max in UI text (optional safety)
+        if (parseFloat(minVolInput.value) > parseFloat(maxVolInput.value)) {
+             document.getElementById('minVolVal').style.color = '#ff5252';
+        } else {
+             document.getElementById('minVolVal').style.color = '#aaa';
+        }
     };
 
-    [minFreqInput, maxFreqInput, volInput, rateInput].forEach(el => {
+    [minFreqInput, maxFreqInput, minVolInput, maxVolInput, rateInput].forEach(el => {
         el.addEventListener('input', updateDisplay);
     });
 
@@ -152,7 +175,7 @@
     function playBurst() {
         if (!isPlaying) return;
 
-        // 1. Create Oscillator for this burst
+        // 1. Create Oscillator
         const osc = audioCtx.createOscillator();
         const burstGain = audioCtx.createGain();
         
@@ -163,62 +186,73 @@
         const minF = parseInt(minFreqInput.value);
         const maxF = parseInt(maxFreqInput.value);
         const activityLevel = parseInt(rateInput.value);
-        
-        // Random Frequency Sweep
+
+        // --- LOOMING VOLUME LOGIC ---
+        // Get user bounds
+        let lowerBound = parseFloat(minVolInput.value);
+        let upperBound = parseFloat(maxVolInput.value);
+
+        // Safety: If user puts Min higher than Max, swap them
+        if (lowerBound > upperBound) {
+            [lowerBound, upperBound] = [upperBound, lowerBound];
+        }
+
+        // A. Pick a random START volume somewhere between LowerBound and UpperBound
+        const startVol = randomRange(lowerBound, upperBound);
+
+        // B. Pick a random END volume somewhere between the START volume and UpperBound
+        // This ensures the sound always gets louder (or stays same), never quieter.
+        const endVol = randomRange(startVol, upperBound); 
+
+        // Frequency Logic
         const startFreq = randomRange(minF, maxF);
         const endFreq = randomRange(minF, maxF);
-        
-        // --- UPDATED DURATION LOGIC ---
-        // Random Duration between 0.5s and 3.0s
         const duration = randomRange(0.5, 3.0); 
         
         // 3. Schedule Sound
         const now = audioCtx.currentTime;
         
-        // Frequency Sweep (Siren effect)
+        // Frequency Sweep
         osc.frequency.setValueAtTime(startFreq, now);
         osc.frequency.linearRampToValueAtTime(endFreq, now + duration);
 
-        // Volume Envelope (Attack -> Sustain -> Release)
-        burstGain.gain.setValueAtTime(0, now);
-        burstGain.gain.linearRampToValueAtTime(1, now + 0.1); // Slow attack (100ms) prevents clicking
-        burstGain.gain.setValueAtTime(1, now + (duration - 0.1)); // Sustain
-        burstGain.gain.linearRampToValueAtTime(0, now + duration); // Release
+        // Volume Envelope (Looming Swell)
+        burstGain.gain.setValueAtTime(0, now); // Silence
+        
+        // Quick fade in to the 'startVol' (0.1s)
+        burstGain.gain.linearRampToValueAtTime(startVol, now + 0.1); 
+        
+        // Swell from 'startVol' to 'endVol' over the rest of the duration
+        burstGain.gain.linearRampToValueAtTime(endVol, now + duration); 
+        
+        // Instant cut or quick release at the very end
+        burstGain.gain.linearRampToValueAtTime(0, now + duration + 0.05);
 
         // Start and Stop
         osc.start(now);
         osc.stop(now + duration + 0.1);
 
         // 4. Schedule Next Burst
-        // Invert rate: High rate (10) = short gap. Low rate (1) = long gap.
         const baseDelay = (11 - activityLevel) * 200; 
-        const randomDelay = Math.random() * 1500; // Increased randomness for gaps
+        const randomDelay = Math.random() * 1500; 
         const totalDelay = baseDelay + randomDelay;
 
-        // Visual Feedback (Duration rounded to 1 decimal)
-        statusText.textContent = `Active (${duration.toFixed(1)}s): ${Math.round(startFreq)}Hz ➔ ${Math.round(endFreq)}Hz`;
+        // Visual Feedback
+        statusText.textContent = `Swell (${Math.round(startVol*100)}% ➔ ${Math.round(endVol*100)}%): ${Math.round(startFreq)}Hz ➔ ${Math.round(endFreq)}Hz`;
         
-        // Wait for the sound to finish (duration * 1000) + the gap time
         timeoutId = setTimeout(playBurst, (duration * 1000) + totalDelay);
     }
 
     startBtn.addEventListener('click', () => {
         if (isPlaying) return;
         
-        // Initialize Audio Context (must be user triggered)
         if (!audioCtx) {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
 
-        // Master Gain (Volume Control)
         mainGain = audioCtx.createGain();
         mainGain.connect(audioCtx.destination);
-        mainGain.gain.value = volInput.value;
-
-        // Watch volume slider to update in real-time
-        volInput.addEventListener('input', () => {
-            if(mainGain) mainGain.gain.value = volInput.value;
-        });
+        mainGain.gain.value = 1.0; 
 
         isPlaying = true;
         statusText.textContent = "Running...";
@@ -231,11 +265,7 @@
         clearTimeout(timeoutId);
         statusText.textContent = "Stopped";
         statusText.style.color = "#ff5252";
-        
-        // Disconnect to ensure silence
-        if (mainGain) {
-            mainGain.disconnect();
-        }
+        if (mainGain) mainGain.disconnect();
     });
 
 </script>
