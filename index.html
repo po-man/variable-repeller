@@ -26,17 +26,17 @@
             width: 100%;
         }
         h1 { margin-top: 0; font-size: 1.5rem; text-align: center; color: #ff5252; }
-        .status { 
-            text-align: center; 
-            margin-bottom: 20px; 
-            font-weight: bold; 
+        .status {
+            text-align: center;
+            margin-bottom: 20px;
+            font-weight: bold;
             height: 1.2em;
             color: #4caf50;
         }
         .control-group { margin-bottom: 20px; }
         label { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; align-items: center; }
         input[type="range"] { width: 100%; cursor: pointer; accent-color: #ff5252; }
-        
+
         .btn-group { display: flex; gap: 10px; margin-top: 20px; }
         button {
             flex: 1;
@@ -133,24 +133,24 @@
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
     const statusText = document.getElementById('statusText');
-    
+
     const minFreqInput = document.getElementById('minFreq');
     const maxFreqInput = document.getElementById('maxFreq');
-    
+
     // New Volume Inputs
     const minVolInput = document.getElementById('minVol');
     const maxVolInput = document.getElementById('maxVol');
-    
+
     const rateInput = document.getElementById('pulseRate');
 
     // UI Updates
     const updateDisplay = () => {
         document.getElementById('minFreqVal').textContent = minFreqInput.value;
         document.getElementById('maxFreqVal').textContent = maxFreqInput.value;
-        
+
         document.getElementById('minVolVal').textContent = Math.round(minVolInput.value * 100) + '%';
         document.getElementById('maxVolVal').textContent = Math.round(maxVolInput.value * 100) + '%';
-        
+
         let rateText = "Medium";
         if(rateInput.value < 4) rateText = "Low";
         if(rateInput.value > 7) rateText = "High";
@@ -178,7 +178,7 @@
         // 1. Create Oscillator
         const osc = audioCtx.createOscillator();
         const burstGain = audioCtx.createGain();
-        
+
         osc.connect(burstGain);
         burstGain.connect(mainGain);
 
@@ -202,29 +202,29 @@
 
         // B. Pick a random END volume somewhere between the START volume and UpperBound
         // This ensures the sound always gets louder (or stays same), never quieter.
-        const endVol = randomRange(startVol, upperBound); 
+        const endVol = randomRange(startVol, upperBound);
 
         // Frequency Logic
         const startFreq = randomRange(minF, maxF);
         const endFreq = randomRange(minF, maxF);
-        const duration = randomRange(0.5, 3.0); 
-        
+        const duration = randomRange(0.5, 3.0);
+
         // 3. Schedule Sound
         const now = audioCtx.currentTime;
-        
+
         // Frequency Sweep
         osc.frequency.setValueAtTime(startFreq, now);
         osc.frequency.linearRampToValueAtTime(endFreq, now + duration);
 
         // Volume Envelope (Looming Swell)
         burstGain.gain.setValueAtTime(0, now); // Silence
-        
+
         // Quick fade in to the 'startVol' (0.1s)
-        burstGain.gain.linearRampToValueAtTime(startVol, now + 0.1); 
-        
+        burstGain.gain.linearRampToValueAtTime(startVol, now + 0.1);
+
         // Swell from 'startVol' to 'endVol' over the rest of the duration
-        burstGain.gain.linearRampToValueAtTime(endVol, now + duration); 
-        
+        burstGain.gain.linearRampToValueAtTime(endVol, now + duration);
+
         // Instant cut or quick release at the very end
         burstGain.gain.linearRampToValueAtTime(0, now + duration + 0.05);
 
@@ -233,26 +233,26 @@
         osc.stop(now + duration + 0.1);
 
         // 4. Schedule Next Burst
-        const baseDelay = (11 - activityLevel) * 200; 
-        const randomDelay = Math.random() * 1500; 
+        const baseDelay = (11 - activityLevel) * 200;
+        const randomDelay = Math.random() * 1500;
         const totalDelay = baseDelay + randomDelay;
 
         // Visual Feedback
         statusText.textContent = `Swell (${Math.round(startVol*100)}% ➔ ${Math.round(endVol*100)}%): ${Math.round(startFreq)}Hz ➔ ${Math.round(endFreq)}Hz`;
-        
+
         timeoutId = setTimeout(playBurst, (duration * 1000) + totalDelay);
     }
 
     startBtn.addEventListener('click', () => {
         if (isPlaying) return;
-        
+
         if (!audioCtx) {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
 
         mainGain = audioCtx.createGain();
         mainGain.connect(audioCtx.destination);
-        mainGain.gain.value = 1.0; 
+        mainGain.gain.value = 1.0;
 
         isPlaying = true;
         statusText.textContent = "Running...";
